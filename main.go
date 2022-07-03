@@ -1,7 +1,13 @@
 package main
 
-import "challenging/service"
+import (
+	"challenging/service"
+	"fmt"
+)
 
 func main() {
-	service.LoadFile()
+	err := service.CalculateStatus("./data/data.json")
+	if err != nil {
+		fmt.Println(err)
+	}
 }

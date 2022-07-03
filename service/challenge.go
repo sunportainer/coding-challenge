@@ -2,7 +2,7 @@ package service
 
 import (
 	"encoding/json"
-	"fmt"
+	"github.com/pkg/errors"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 	"io/ioutil"
@@ -36,20 +36,28 @@ type BookKeeping struct {
 	User                 string `json:"user"`
 }
 
-func LoadFile() {
-
-	jsonFile, err := os.Open("./data/data.json")
+func CalculateStatus(file string) error {
+	if _, err := os.Stat(file); err != nil {
+		if os.IsNotExist(err) {
+			return errors.Wrap(err, "message: failed to locate data file")
+		}
+		return err
+	}
+	jsonFile, err := os.Open(file)
 	if err != nil {
-		fmt.Println(err)
+		return errors.Wrap(err, "message: failed to open data file")
 	}
 	defer jsonFile.Close()
-	byteValue, _ := ioutil.ReadAll(jsonFile)
+	byteValue, err := ioutil.ReadAll(jsonFile)
+	if err != nil {
+		return errors.Wrap(err, "message: failed to read data file")
+	}
 	var books BookKeeping
-
-	json.Unmarshal(byteValue, &books)
-
-	var revenue, expense float64
-	var grossProfitMarginTotal float64
+	err = json.Unmarshal(byteValue, &books)
+	if err != nil {
+		return errors.Wrap(err, "message: failed to parse data file")
+	}
+	var revenue, expense, grossProfitMarginTotal float64
 	var workingCapitalRatio, liabilities float64
 
 	for _, record := range books.Data {
@@ -75,20 +83,31 @@ func LoadFile() {
 
 		if record.AccountCategory == "liability" &&
 			(record.AccountType == "current" || record.AccountType == "current_accounts_payable") {
-			if record.ValueType == "debit" {
-				liabilities = liabilities - record.TotalValue
-			}
 			if record.ValueType == "credit" {
 				liabilities = liabilities + record.TotalValue
+			}
+			if record.ValueType == "debit" {
+				liabilities = liabilities - record.TotalValue
 			}
 		}
 	}
 	p := message.NewPrinter(language.English)
-	fmt.Printf(p.Sprintf("Revenue: $%.0f\n", revenue))
-	fmt.Printf(p.Sprintf("Revenue: $%.0f\n", expense))
-	grossProfitMargin := grossProfitMarginTotal / revenue
-	netProfitMargin := (revenue - expense) / revenue
-	fmt.Printf("Gross Profit Margin:%.0f%%\n", grossProfitMargin*100)
-	fmt.Printf("Net Profit Margin:%.0f%%\n", netProfitMargin*100)
-	fmt.Printf("Working Capital Ratio:%.0f%%", workingCapitalRatio/liabilities*100)
+	p.Printf("Revenue: $%.0f\n", revenue)
+	p.Printf("Expense: $%.0f\n", expense)
+	if revenue == 0 {
+		p.Printf("Gross Profit Margin: 0%")
+		p.Printf("Net Profit Margin: 0%")
+	} else {
+		grossProfitMargin := grossProfitMarginTotal / revenue
+		p.Printf("Gross Profit Margin: %.0f%%\n", grossProfitMargin*100)
+		netProfitMargin := (revenue - expense) / revenue
+		p.Printf("Net Profit Margin: %.0f%%\n", netProfitMargin*100)
+	}
+	if liabilities == 0 {
+		p.Printf("Working Capital Ratio: 0%")
+	} else {
+		p.Printf("Working Capital Ratio: %.0f%%\n", workingCapitalRatio/liabilities*100)
+	}
+
+	return nil
 }
